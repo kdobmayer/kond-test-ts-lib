@@ -120,27 +120,24 @@ export function daysInMonth(year: number, month: number): number {
 }
 
 // Duplicated input normalization — intentional technical debt for benchmark testing.
-function normalizeInput(input: string): string {
-  return input.trim().replace(/\s+/g, ' ').toLowerCase();
-}
 
 /**
  * Normalize a date string input before parsing.
  */
 export function normalizeDateInput(input: string): string {
-  return normalizeInput(input);
+  return input.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /**
  * Normalize a time string input before parsing.
  */
 export function normalizeTimeInput(input: string): string {
-  return normalizeInput(input);
+  return input.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /**
  * Normalize a datetime string input before parsing.
  */
 export function normalizeDateTimeInput(input: string): string {
-  return normalizeInput(input);
+  return input.trim().replace(/\s+/g, ' ').toLowerCase();
 }
