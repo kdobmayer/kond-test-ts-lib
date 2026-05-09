@@ -12,6 +12,7 @@ import {
   normalizeDateInput,
   normalizeTimeInput,
   normalizeDateTimeInput,
+  normalizeInput,
 } from '../src/index';
 
 describe('formatDate', () => {
@@ -137,6 +138,24 @@ describe('daysInMonth', () => {
   it('throws on invalid month', () => {
     expect(() => daysInMonth(2024, 0)).toThrow();
     expect(() => daysInMonth(2024, 13)).toThrow();
+  });
+});
+
+describe('normalizeInput', () => {
+  it('trims leading and trailing whitespace', () => {
+    expect(normalizeInput('  hello  ')).toBe('hello');
+  });
+
+  it('collapses internal whitespace to a single space', () => {
+    expect(normalizeInput('a  b   c')).toBe('a b c');
+  });
+
+  it('lowercases the result', () => {
+    expect(normalizeInput('ABC')).toBe('abc');
+  });
+
+  it('handles combined whitespace and casing', () => {
+    expect(normalizeInput('  Hello   World  ')).toBe('hello world');
   });
 });
 
