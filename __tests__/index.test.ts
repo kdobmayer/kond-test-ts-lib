@@ -9,6 +9,7 @@ import {
   daysBetween,
   isLeapYear,
   daysInMonth,
+  normalizeInput,
   normalizeDateInput,
   normalizeTimeInput,
   normalizeDateTimeInput,
@@ -137,6 +138,20 @@ describe('daysInMonth', () => {
   it('throws on invalid month', () => {
     expect(() => daysInMonth(2024, 0)).toThrow();
     expect(() => daysInMonth(2024, 13)).toThrow();
+  });
+});
+
+describe('normalizeInput', () => {
+  it('trims leading and trailing whitespace', () => {
+    expect(normalizeInput('  hello  ')).toBe('hello');
+  });
+
+  it('collapses internal whitespace runs to a single space', () => {
+    expect(normalizeInput('a  b\t\tc')).toBe('a b c');
+  });
+
+  it('lowercases the result', () => {
+    expect(normalizeInput('  UPPER lower  ')).toBe('upper lower');
   });
 });
 

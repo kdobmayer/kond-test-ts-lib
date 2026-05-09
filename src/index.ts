@@ -119,7 +119,12 @@ export function daysInMonth(year: number, month: number): number {
   return lengths[month - 1];
 }
 
-// Duplicated input normalization — intentional technical debt for benchmark testing.
+/**
+ * Trim surrounding whitespace, collapse internal whitespace runs to a single space, and lowercase.
+ */
+export function normalizeInput(input: string): string {
+  return input.trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
 /**
  * Normalize a date string input before parsing.
