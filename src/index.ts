@@ -1,5 +1,8 @@
 /**
  * Format a Date as YYYY-MM-DD.
+ *
+ * @example
+ * formatDate(new Date(2024, 0, 15)) // "2024-01-15"
  */
 export function formatDate(date: Date): string {
   const y = date.getFullYear();
