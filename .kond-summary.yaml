@@ -1,0 +1,7 @@
+test: "jest --coverage"
+build: "tsc"
+files:
+  - path: src/formatters/index.ts
+    why: "Add the new formatDate utility function."
+  - path: src/formatters/index.test.ts
+    why: "Add unit tests for the formatDate utility function."

@@ -180,6 +180,39 @@ export function toMarkdown(data: DataSet): string {
 }
 
 /**
+ * Format a date value using a format string.
+ * Supported tokens: YYYY, MM, DD, HH, mm, ss
+ * Returns '' for invalid or null/undefined input.
+ * Uses UTC components to keep output stable across environments.
+ */
+export function formatDate(date: Date | string | number, format?: string): string {
+  if (date === null || date === undefined) return '';
+  const d = date instanceof Date ? date : new Date(normalizeDateInput(date));
+  if (isNaN(d.getTime())) return '';
+
+  const fmt = format ?? 'YYYY-MM-DD HH:mm:ss';
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const parts: Record<string, string> = {
+    YYYY: String(d.getUTCFullYear()),
+    MM: pad(d.getUTCMonth() + 1),
+    DD: pad(d.getUTCDate()),
+    HH: pad(d.getUTCHours()),
+    mm: pad(d.getUTCMinutes()),
+    ss: pad(d.getUTCSeconds()),
+  };
+
+  return fmt.replace(/YYYY|MM|DD|HH|mm|ss/g, token => parts[token]);
+}
+
+function normalizeDateInput(date: string | number): string | number {
+  if (typeof date !== 'string') return date;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(date)) {
+    return `${date}Z`;
+  }
+  return date;
+}
+
+/**
  * Format dataset as a summary with statistics.
  */
 export function summarize(data: DataSet): string {
