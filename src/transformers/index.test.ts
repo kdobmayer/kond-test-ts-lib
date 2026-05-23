@@ -1,4 +1,4 @@
-import { map, filter, select, rename, aggregate, join, sort, deduplicate } from './index';
+import { map, filter, select, rename, aggregate, join, sort, deduplicate, flatten } from './index';
 import { DataSet } from '../types';
 
 const sampleData: DataSet = [
@@ -127,6 +127,57 @@ describe('deduplicate', () => {
     ];
     const result = deduplicate(data, ['id']);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe('flatten', () => {
+  it('flattens nested objects with dot notation', () => {
+    const data = [{ a: { b: 1, c: { d: 2 } }, e: 'top' }];
+    const result = flatten(data);
+    expect(result[0]).toEqual({ 'a.b': 1, 'a.c.d': 2, e: 'top' });
+  });
+
+  it('leaves already-flat records unchanged', () => {
+    const data = [{ x: 1, y: 'hello', z: null }];
+    const result = flatten(data);
+    expect(result[0]).toEqual({ x: 1, y: 'hello', z: null });
+  });
+
+  it('supports a custom separator', () => {
+    const data = [{ a: { b: 1 } }];
+    const result = flatten(data, '_');
+    expect(result[0]).toEqual({ a_b: 1 });
+  });
+
+  it('handles multiple records independently', () => {
+    const data = [
+      { user: { name: 'Alice', age: 30 } },
+      { user: { name: 'Bob', age: 25 } },
+    ];
+    const result = flatten(data);
+    expect(result[0]['user.name']).toBe('Alice');
+    expect(result[1]['user.age']).toBe(25);
+  });
+
+  it('serializes array values into DataValue-compatible strings', () => {
+    const data = [{ tags: ['a', 'b'] }] as Record<string, unknown>[];
+    const result = flatten(data);
+    expect(result[0].tags).toBe('["a","b"]');
+  });
+
+  it('serializes circular references instead of recursing forever', () => {
+    const record: Record<string, unknown> = { user: { name: 'Alice' } };
+    (record.user as Record<string, unknown>).self = record.user;
+
+    const result = flatten([record]);
+
+    expect(result[0]['user.name']).toBe('Alice');
+    expect(result[0]['user.self']).toBe('[Circular]');
+  });
+
+  it('throws on flattened key collisions', () => {
+    const data = [{ 'user.name': 'flat', user: { name: 'nested' } }];
+    expect(() => flatten(data)).toThrow('Flatten key collision for "user.name"');
   });
 });
 
