@@ -255,6 +255,95 @@ export function sort(data: DataSet, fields: Array<{ field: string; order?: 'asc'
 }
 
 /**
+ * Flatten nested objects into dot-notation key-value pairs.
+ * Non-plain-object leaves are converted into DataValue-compatible primitives.
+ */
+export function flatten(data: Record<string, unknown>[], separator = '.'): DataSet {
+  function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  function stringifySafely(value: unknown): string {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, nestedValue) => {
+      if (typeof nestedValue === 'bigint') {
+        return nestedValue.toString();
+      }
+
+      if (nestedValue !== null && typeof nestedValue === 'object') {
+        if (seen.has(nestedValue)) {
+          return '[Circular]';
+        }
+        seen.add(nestedValue);
+      }
+
+      return nestedValue;
+    }) ?? String(value);
+  }
+
+  function toDataValue(value: unknown): DataValue {
+    if (
+      value === null ||
+      value === undefined ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+
+    return stringifySafely(value);
+  }
+
+  function setFlattenedValue(result: DataRecord, key: string, value: DataValue): void {
+    if (key in result) {
+      throw new Error(`Flatten key collision for "${key}"`);
+    }
+    result[key] = value;
+  }
+
+  function flattenRecord(record: Record<string, unknown>, prefix: string, ancestors: WeakSet<object>): DataRecord {
+    const result: DataRecord = {};
+    for (const [key, value] of Object.entries(record)) {
+      const fullKey = prefix ? `${prefix}${separator}${key}` : key;
+
+      if (isPlainObject(value)) {
+        if (ancestors.has(value)) {
+          setFlattenedValue(result, fullKey, '[Circular]');
+          continue;
+        }
+
+        ancestors.add(value);
+        const nested = flattenRecord(value, fullKey, ancestors);
+        ancestors.delete(value);
+
+        for (const [nestedKey, nestedValue] of Object.entries(nested)) {
+          setFlattenedValue(result, nestedKey, nestedValue);
+        }
+      } else {
+        setFlattenedValue(result, fullKey, toDataValue(value));
+      }
+    }
+    return result;
+  }
+
+  return data.map(record => {
+    const ancestors = new WeakSet<object>();
+    ancestors.add(record);
+    return flattenRecord(record, '', ancestors);
+  });
+}
+
+/**
  * Deduplicate records by specified key fields.
  */
 export function deduplicate(data: DataSet, keys: string[]): DataSet {
