@@ -136,3 +136,8 @@ export interface XmlOptions {
   textKey?: string;
   onError?: 'skip' | 'stop' | 'collect';
 }
+
+/** Pipeline configuration */
+export interface PipelineConfig {
+  onError?: 'collect' | 'stop' | 'skip';
+}

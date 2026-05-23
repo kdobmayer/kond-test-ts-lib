@@ -1,4 +1,4 @@
-import { DataRecord, DataSet, ValidationResult } from '../types';
+import { DataRecord, DataSet, ValidationResult, PipelineConfig } from '../types';
 import { validateSchema, validateCustomRules, CustomRule } from '../validators';
 import { Schema } from '../types';
 
@@ -14,15 +14,23 @@ export interface PipelineResult {
   errors: string[];
 }
 
+const DEFAULT_CONFIG: Required<PipelineConfig> = { onError: 'collect' };
+
+function cloneDataSet(data: DataSet): DataSet {
+  return data.map((record) => ({ ...record }));
+}
+
 /**
  * Fluent pipeline builder for chaining transformations and validations.
  */
 export class Pipeline {
   private steps: PipelineStep[] = [];
   private source: DataSet = [];
+  private config: Required<PipelineConfig>;
 
-  constructor(data?: DataSet) {
+  constructor(data?: DataSet, config?: PipelineConfig) {
     if (data) this.source = data;
+    this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   /**
@@ -75,19 +83,37 @@ export class Pipeline {
    * Execute the pipeline and return results.
    */
   execute(): PipelineResult {
-    let data = [...this.source];
+    const onError = this.config.onError;
+    let data = cloneDataSet(this.source);
     const validationResults: ValidationResult[] = [];
     const errors: string[] = [];
     let stepsExecuted = 0;
 
     for (const step of this.steps) {
+      const stepNumber = stepsExecuted + 1;
       try {
         switch (step.type) {
-          case 'transform':
-            data = step.fn(data);
+          case 'transform': {
+            const workingData = onError === 'skip' ? cloneDataSet(data) : data;
+            data = step.fn(workingData);
             break;
+          }
           case 'filter':
-            data = data.filter((record, index) => step.fn(record, index));
+            if (onError === 'skip') {
+              const snapshot = cloneDataSet(data);
+              const kept: DataRecord[] = [];
+              for (let i = 0; i < snapshot.length; i++) {
+                try {
+                  if (step.fn(snapshot[i], i)) kept.push(snapshot[i]);
+                } catch (e) {
+                  const detail = e instanceof Error ? e.message : String(e);
+                  errors.push(`Step ${stepNumber}, record ${i + 1}: ${detail}`);
+                }
+              }
+              data = kept;
+            } else {
+              data = data.filter((record, index) => step.fn(record, index));
+            }
             break;
           case 'validate': {
             const result = step.fn(data);
@@ -97,8 +123,17 @@ export class Pipeline {
         }
         stepsExecuted++;
       } catch (e) {
-        errors.push(`Step ${stepsExecuted + 1}: ${(e as Error).message}`);
-        break;
+        const detail = e instanceof Error ? e.message : String(e);
+        const msg = `Step ${stepNumber}: ${detail}`;
+        if (onError === 'stop') {
+          throw new Error(msg);
+        } else if (onError === 'skip') {
+          errors.push(msg);
+          stepsExecuted++;
+        } else {
+          errors.push(msg);
+          break;
+        }
       }
     }
 
@@ -116,8 +151,8 @@ export class Pipeline {
 }
 
 /**
- * Create a new pipeline with optional initial data.
+ * Create a new pipeline with optional initial data and config.
  */
-export function createPipeline(data?: DataSet): Pipeline {
-  return new Pipeline(data);
+export function createPipeline(data?: DataSet, config?: PipelineConfig): Pipeline {
+  return new Pipeline(data, config);
 }
