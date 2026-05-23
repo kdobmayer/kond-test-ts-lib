@@ -7,6 +7,7 @@ import {
   JoinSpec,
   JoinType,
   PivotSpec,
+  SampleOptions,
 } from '../types';
 
 /**
@@ -265,4 +266,55 @@ export function deduplicate(data: DataSet, keys: string[]): DataSet {
     seen.add(key);
     return true;
   });
+}
+
+function makePrng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+const DEFAULT_SAMPLE_OPTIONS: SampleOptions = {};
+
+function normalizeSampleCount(count: number, max: number): number {
+  if (!Number.isFinite(count)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(Math.trunc(count), max));
+}
+
+/**
+ * Sample N records randomly from the dataset.
+ * When both count and percentage are provided, count takes precedence.
+ * Pass a seed for reproducible results.
+ */
+export function sample(data: DataSet, options?: SampleOptions): DataSet {
+  const opts = { ...DEFAULT_SAMPLE_OPTIONS, ...options };
+  const arr = [...data];
+  const n = arr.length;
+
+  let count: number | undefined;
+  if (opts.count !== undefined) {
+    count = normalizeSampleCount(opts.count, n);
+  } else if (opts.percentage !== undefined) {
+    count = normalizeSampleCount(Math.round((n * opts.percentage) / 100), n);
+  } else {
+    return arr;
+  }
+
+  if (count === 0) return [];
+
+  const rand = opts.seed !== undefined ? makePrng(opts.seed) : Math.random;
+
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(rand() * (n - i));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+
+  return arr.slice(0, count);
 }

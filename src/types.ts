@@ -112,6 +112,16 @@ export interface PivotSpec {
   aggregateFn?: AggregateFunction;
 }
 
+/** Sample transformer options */
+export interface SampleOptions {
+  /** Exact number of records to return; takes precedence over percentage */
+  count?: number;
+  /** Percentage of records to return (0–100 inclusive) */
+  percentage?: number;
+  /** Seed for reproducible random sampling */
+  seed?: number;
+}
+
 /** CSV parser options */
 export interface CsvOptions {
   delimiter?: string;
