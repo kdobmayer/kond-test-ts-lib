@@ -1,4 +1,4 @@
-import { map, filter, select, rename, aggregate, join, sort, deduplicate } from './index';
+import { map, filter, select, rename, aggregate, join, sort, deduplicate, sample } from './index';
 import { DataSet } from '../types';
 
 const sampleData: DataSet = [
@@ -131,3 +131,85 @@ describe('deduplicate', () => {
 });
 
 // NOTE: pivot transformer intentionally has ZERO tests (rough edge)
+
+describe('sample', () => {
+  const tenRecords: DataSet = Array.from({ length: 10 }, (_, i) => ({ id: i, value: `v${i}` }));
+  const twentyRecords: DataSet = Array.from({ length: 20 }, (_, i) => ({ id: i }));
+
+  it('returns exact count of records from the input', () => {
+    const result = sample(sampleData, { count: 2 });
+    expect(result).toHaveLength(2);
+    result.forEach(r => expect(sampleData).toContainEqual(r));
+  });
+
+  it('returns percentage of records (rounds to nearest integer)', () => {
+    const result = sample(tenRecords, { percentage: 50 });
+    expect(result).toHaveLength(5);
+    result.forEach(r => expect(tenRecords).toContainEqual(r));
+  });
+
+  it('count takes precedence over percentage', () => {
+    const result = sample(sampleData, { count: 2, percentage: 80 });
+    expect(result).toHaveLength(2);
+  });
+
+  it('same seed produces identical results', () => {
+    const r1 = sample(sampleData, { count: 3, seed: 42 });
+    const r2 = sample(sampleData, { count: 3, seed: 42 });
+    expect(r1).toEqual(r2);
+  });
+
+  it('different seeds produce different orderings on sufficiently large input', () => {
+    const r1 = sample(twentyRecords, { count: 20, seed: 1 });
+    const r2 = sample(twentyRecords, { count: 20, seed: 2 });
+    expect(r1.map(r => r.id)).not.toEqual(r2.map(r => r.id));
+  });
+
+  it('without seed returns a valid subset (no order guarantee)', () => {
+    const result = sample(sampleData, { count: 2 });
+    expect(result).toHaveLength(2);
+    result.forEach(r => expect(sampleData).toContainEqual(r));
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(sample([], { count: 5 })).toEqual([]);
+  });
+
+  it('clamps count to input length when count exceeds dataset size', () => {
+    const result = sample(sampleData, { count: 100 });
+    expect(result).toHaveLength(sampleData.length);
+    result.forEach(r => expect(sampleData).toContainEqual(r));
+  });
+
+  it('returns empty array for count of zero', () => {
+    expect(sample(sampleData, { count: 0 })).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const copy = sampleData.map(r => ({ ...r }));
+    sample(sampleData, { count: 2, seed: 7 });
+    expect(sampleData).toEqual(copy);
+  });
+
+  it('returns all records when neither count nor percentage is provided', () => {
+    const result = sample(sampleData, {});
+    expect(result).toHaveLength(sampleData.length);
+    result.forEach(r => expect(sampleData).toContainEqual(r));
+  });
+
+  it('returns all records when options are omitted', () => {
+    const result = sample(sampleData);
+    expect(result).toEqual(sampleData);
+  });
+
+  it('truncates fractional count values instead of over-sampling', () => {
+    const result = sample(sampleData, { count: 2.9, seed: 3 });
+    expect(result).toHaveLength(2);
+    result.forEach(r => expect(sampleData).toContainEqual(r));
+  });
+
+  it('returns empty array for non-finite count values', () => {
+    expect(sample(sampleData, { count: Number.NaN })).toEqual([]);
+    expect(sample(sampleData, { count: Number.POSITIVE_INFINITY })).toEqual([]);
+  });
+});
