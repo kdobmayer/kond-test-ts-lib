@@ -1,5 +1,5 @@
-import { DataRecord, DataSet, ValidationResult } from '../types';
-import { validateSchema, validateCustomRules, CustomRule } from '../validators';
+import { DataRecord, DataSet, ValidationResult, PipelineOptions } from '../types';
+import { validateSchema, validateCustomRules, CustomRule, ValidationReport } from '../validators';
 import { Schema } from '../types';
 
 type PipelineStep =
@@ -10,6 +10,7 @@ type PipelineStep =
 export interface PipelineResult {
   data: DataSet;
   validationResults: ValidationResult[];
+  validationReport: ValidationReport;
   stepsExecuted: number;
   errors: string[];
 }
@@ -20,9 +21,12 @@ export interface PipelineResult {
 export class Pipeline {
   private steps: PipelineStep[] = [];
   private source: DataSet = [];
+  private options: PipelineOptions;
+  private _report: ValidationReport = new ValidationReport();
 
-  constructor(data?: DataSet) {
+  constructor(data?: DataSet, options?: PipelineOptions) {
     if (data) this.source = data;
+    this.options = this.normalizeOptions(options);
   }
 
   /**
@@ -72,6 +76,13 @@ export class Pipeline {
   }
 
   /**
+   * Returns the ValidationReport from the most recent execute() call.
+   */
+  getValidationReport(): ValidationReport {
+    return this._report;
+  }
+
+  /**
    * Execute the pipeline and return results.
    */
   execute(): PipelineResult {
@@ -79,6 +90,8 @@ export class Pipeline {
     const validationResults: ValidationResult[] = [];
     const errors: string[] = [];
     let stepsExecuted = 0;
+    const report = new ValidationReport();
+    this._report = report;
 
     for (const step of this.steps) {
       try {
@@ -92,6 +105,19 @@ export class Pipeline {
           case 'validate': {
             const result = step.fn(data);
             validationResults.push(result);
+            report.addResult(result, {
+              source: stepsExecuted.toString(),
+              totalRows: data.length,
+            });
+
+            if (this.options.maxErrors !== undefined) {
+              const errorCount = report.getSummary().bySeverity.error;
+              if (errorCount > this.options.maxErrors) {
+                stepsExecuted++;
+                errors.push(`Validation error threshold exceeded: ${errorCount} errors`);
+                return { data, validationResults, validationReport: report, stepsExecuted, errors };
+              }
+            }
             break;
           }
         }
@@ -102,22 +128,34 @@ export class Pipeline {
       }
     }
 
-    return { data, validationResults, stepsExecuted, errors };
+    return { data, validationResults, validationReport: report, stepsExecuted, errors };
   }
 
   /**
-   * Reset the pipeline steps.
+   * Reset the pipeline steps and report.
    */
   reset(): Pipeline {
     this.steps = [];
     this.source = [];
+    this._report = new ValidationReport();
     return this;
+  }
+
+  private normalizeOptions(options?: PipelineOptions): PipelineOptions {
+    if (options?.maxErrors !== undefined) {
+      const { maxErrors } = options;
+      if (!Number.isInteger(maxErrors) || maxErrors < 0) {
+        throw new Error('Pipeline option "maxErrors" must be a non-negative integer');
+      }
+    }
+
+    return options ?? {};
   }
 }
 
 /**
- * Create a new pipeline with optional initial data.
+ * Create a new pipeline with optional initial data and options.
  */
-export function createPipeline(data?: DataSet): Pipeline {
-  return new Pipeline(data);
+export function createPipeline(data?: DataSet, options?: PipelineOptions): Pipeline {
+  return new Pipeline(data, options);
 }
