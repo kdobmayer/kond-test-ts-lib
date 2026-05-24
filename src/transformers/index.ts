@@ -7,6 +7,7 @@ import {
   JoinSpec,
   JoinType,
   PivotSpec,
+  WindowSpec,
 } from '../types';
 
 /**
@@ -265,4 +266,87 @@ export function deduplicate(data: DataSet, keys: string[]): DataSet {
     seen.add(key);
     return true;
   });
+}
+
+function parseDuration(duration: string): number {
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/.exec(duration);
+  if (!match) throw new Error(`Invalid window duration: "${duration}". Expected format: <number><unit> where unit is ms, s, m, h, or d.`);
+  const value = parseFloat(match[1]);
+  let durationMs: number;
+  switch (match[2]) {
+    case 'ms': durationMs = value; break;
+    case 's':  durationMs = value * 1_000; break;
+    case 'm':  durationMs = value * 60_000; break;
+    case 'h':  durationMs = value * 3_600_000; break;
+    case 'd':  durationMs = value * 86_400_000; break;
+    default:   throw new Error(`Unknown duration unit: "${match[2]}"`);
+  }
+
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error(`Invalid window duration: "${duration}". Duration must be greater than zero.`);
+  }
+
+  return durationMs;
+}
+
+function resolveTimestamp(value: DataValue): number | null {
+  if (typeof value === 'number' && isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return null;
+}
+
+/**
+ * Window transformer for time-series data.
+ * Produces one output record per non-empty window containing aggregated values.
+ * Window intervals are half-open: [windowStart, windowEnd).
+ */
+export function windowTransform(data: DataSet, spec: WindowSpec): DataSet {
+  if (data.length === 0) return [];
+
+  const { field, size, type = 'tumbling', step, aggregate: aggSpecs } = spec;
+  if (type !== 'tumbling' && type !== 'sliding') {
+    throw new Error(`Invalid window type: "${String(type)}". Expected "tumbling" or "sliding".`);
+  }
+
+  const sizeMs = parseDuration(size);
+  const stepMs = type === 'sliding' && step ? parseDuration(step) : sizeMs;
+
+  const timestamped = data
+    .map(record => ({ record, ts: resolveTimestamp(record[field]) }))
+    .filter((item): item is { record: DataRecord; ts: number } => item.ts !== null);
+
+  if (timestamped.length === 0) return [];
+
+  const minTs = timestamped.reduce((min, d) => Math.min(min, d.ts), Infinity);
+  const maxTs = timestamped.reduce((max, d) => Math.max(max, d.ts), -Infinity);
+  const firstWindowStart = Math.floor(minTs / stepMs) * stepMs;
+
+  const results: DataSet = [];
+
+  for (let windowStart = firstWindowStart; windowStart <= maxTs; windowStart += stepMs) {
+    const windowEnd = windowStart + sizeMs;
+    const windowRecords = timestamped
+      .filter(d => d.ts >= windowStart && d.ts < windowEnd)
+      .map(d => d.record);
+
+    if (windowRecords.length === 0) continue;
+
+    const result: DataRecord = {
+      windowStart: new Date(windowStart).toISOString(),
+      windowEnd: new Date(windowEnd).toISOString(),
+    };
+
+    for (const aggSpec of aggSpecs) {
+      const values = windowRecords.map(r => r[aggSpec.field]);
+      const alias = aggSpec.alias ?? `${aggSpec.fn}_${aggSpec.field}`;
+      result[alias] = computeAggregate(values, aggSpec.fn);
+    }
+
+    results.push(result);
+  }
+
+  return results;
 }

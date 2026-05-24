@@ -112,6 +112,22 @@ export interface PivotSpec {
   aggregateFn?: AggregateFunction;
 }
 
+/** Window transformer types */
+export type WindowType = 'tumbling' | 'sliding';
+
+export interface WindowSpec {
+  /** Name of the timestamp field (numeric ms or ISO string) */
+  field: string;
+  /** Window duration, e.g. '5m', '1h', '30s', '1d' */
+  size: string;
+  /** Window type: tumbling (non-overlapping) or sliding (overlapping) */
+  type?: WindowType;
+  /** For sliding windows: how far to advance each step (defaults to size) */
+  step?: string;
+  /** Aggregations to apply within each window */
+  aggregate: AggregateSpec[];
+}
+
 /** CSV parser options */
 export interface CsvOptions {
   delimiter?: string;
