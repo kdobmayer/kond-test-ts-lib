@@ -1,4 +1,5 @@
-import { ChartData, ChartDataPoint, DataRecord, DataSet, DataValue, TableOptions } from '../types';
+import { ChartData, ChartDataPoint, DataRecord, DataSet, DataValue, TableOptions, ValidationIssue } from '../types';
+import { ValidationReport } from '../validators/report';
 
 const DEFAULT_TABLE_OPTIONS: Required<TableOptions> = {
   headers: true,
@@ -177,6 +178,84 @@ export function toMarkdown(data: DataSet): string {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Serialize a ValidationReport as pretty-printed JSON with summary and all issues.
+ */
+export function formatValidationReportJson(report: ValidationReport): string {
+  const allIssues: ValidationIssue[] = report.getIssues();
+  return JSON.stringify({ summary: report.getSummary(), issues: allIssues }, null, 2);
+}
+
+/**
+ * Render the ValidationReport summary as a markdown table (one row per field).
+ */
+export function formatValidationReportMarkdown(report: ValidationReport): string {
+  const summary = report.getSummary();
+  const columns = ['Field', 'Issues', 'Errors', 'Warnings', 'Infos'];
+  const lines: string[] = [];
+
+  lines.push('| ' + columns.join(' | ') + ' |');
+  lines.push('| ' + columns.map(() => '---').join(' | ') + ' |');
+
+  const errors = report.getFailures('error');
+  const warnings = report.getFailures('warning');
+  const infos = report.getFailures('info');
+
+  const errorsByField: Record<string, number> = {};
+  const warningsByField: Record<string, number> = {};
+  const infosByField: Record<string, number> = {};
+
+  for (const issue of errors) errorsByField[issue.field] = (errorsByField[issue.field] ?? 0) + 1;
+  for (const issue of warnings) warningsByField[issue.field] = (warningsByField[issue.field] ?? 0) + 1;
+  for (const issue of infos) infosByField[issue.field] = (infosByField[issue.field] ?? 0) + 1;
+
+  for (const [field, count] of Object.entries(summary.byField)) {
+    const e = errorsByField[field] ?? 0;
+    const w = warningsByField[field] ?? 0;
+    const i = infosByField[field] ?? 0;
+    lines.push(`| ${field.replace(/\|/g, '\\|')} | ${count} | ${e} | ${w} | ${i} |`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Render all ValidationReport issues as CSV (one row per issue).
+ * Returns empty string when there are no issues.
+ */
+export function formatValidationReportCsv(report: ValidationReport): string {
+  const allIssues: ValidationIssue[] = report.getIssues();
+
+  if (allIssues.length === 0) return '';
+
+  const delimiter = ',';
+  const header = ['row', 'field', 'severity', 'message', 'value']
+    .map(h => escapeCsvField(h, delimiter))
+    .join(delimiter);
+
+  const rows = allIssues.map(issue => {
+    const row = issue.row !== undefined ? String(issue.row) : '';
+    const value = issue.value !== undefined && issue.value !== null ? String(issue.value) : '';
+    return [row, issue.field, issue.severity, issue.message, value]
+      .map(sanitizeSpreadsheetCell)
+      .map(f => escapeCsvField(f, delimiter))
+      .join(delimiter);
+  });
+
+  return [header, ...rows].join('\n');
+}
+
+function sanitizeSpreadsheetCell(value: string): string {
+  if (value.length === 0) return value;
+
+  const trimmed = value.trimStart();
+  if (/^[=+\-@]/.test(trimmed)) {
+    return `'${value}`;
+  }
+
+  return value;
 }
 
 /**
