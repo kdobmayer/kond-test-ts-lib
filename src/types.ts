@@ -136,3 +136,23 @@ export interface XmlOptions {
   textKey?: string;
   onError?: 'skip' | 'stop' | 'collect';
 }
+
+/** Aggregate statistics from a ValidationReport */
+export interface ValidationReportSummary {
+  totalIssues: number;
+  byField: Record<string, number>;
+  byRow: Record<number, number>;
+  bySeverity: Record<ValidationSeverity, number>;
+  passCount: number;
+  failCount: number;
+}
+
+export interface ValidationReportAddOptions {
+  source?: string;
+  totalRows?: number;
+}
+
+/** Options for the Pipeline */
+export interface PipelineOptions {
+  maxErrors?: number;
+}
