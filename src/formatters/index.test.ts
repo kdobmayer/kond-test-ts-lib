@@ -1,4 +1,5 @@
-import { formatTable, toChartData, toCsv, toJson, toMarkdown, summarize } from './index';
+import { formatTable, toChartData, toCsv, toJson, toMarkdown, summarize, formatValidationReportJson, formatValidationReportMarkdown, formatValidationReportCsv } from './index';
+import { ValidationReport } from '../validators/report';
 import { DataSet } from '../types';
 
 const sampleData: DataSet = [
@@ -105,6 +106,152 @@ describe('toMarkdown', () => {
 
   it('returns empty for empty data', () => {
     expect(toMarkdown([])).toBe('');
+  });
+});
+
+function makeReport() {
+  const report = new ValidationReport();
+  report.addResult({
+    valid: false,
+    issues: [
+      { field: 'age', message: 'must be positive', severity: 'error', row: 0, value: -1 },
+      { field: 'name', message: 'required', severity: 'error', row: 1 },
+      { field: 'age', message: 'suspicious value', severity: 'warning', row: 2, value: 999 },
+      { field: 'email', message: 'unusual format', severity: 'info', row: 0 },
+    ],
+  });
+  return report;
+}
+
+describe('formatValidationReportJson', () => {
+  it('returns valid JSON with summary and issues keys', () => {
+    const report = makeReport();
+    const result = formatValidationReportJson(report);
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveProperty('summary');
+    expect(parsed).toHaveProperty('issues');
+    expect(parsed.summary.totalIssues).toBe(4);
+    expect(parsed.summary.bySeverity.error).toBe(2);
+    expect(parsed.summary.bySeverity.warning).toBe(1);
+    expect(parsed.summary.bySeverity.info).toBe(1);
+  });
+
+  it('includes all severities in issues array', () => {
+    const report = makeReport();
+    const parsed = JSON.parse(formatValidationReportJson(report));
+    const severities = parsed.issues.map((i: { severity: string }) => i.severity);
+    expect(severities).toContain('error');
+    expect(severities).toContain('warning');
+    expect(severities).toContain('info');
+  });
+
+  it('preserves the original issue order', () => {
+    const report = makeReport();
+    const parsed = JSON.parse(formatValidationReportJson(report));
+    expect(parsed.issues.map((i: { message: string }) => i.message)).toEqual([
+      'must be positive',
+      'required',
+      'suspicious value',
+      'unusual format',
+    ]);
+  });
+
+  it('returns valid JSON for an empty report', () => {
+    const report = new ValidationReport();
+    const parsed = JSON.parse(formatValidationReportJson(report));
+    expect(parsed.summary.totalIssues).toBe(0);
+    expect(parsed.issues).toHaveLength(0);
+  });
+});
+
+describe('formatValidationReportMarkdown', () => {
+  it('contains pipe characters and a separator row', () => {
+    const report = makeReport();
+    const result = formatValidationReportMarkdown(report);
+    expect(result).toContain('|');
+    expect(result).toContain('---');
+  });
+
+  it('has one data row per field with issues', () => {
+    const report = makeReport();
+    const result = formatValidationReportMarkdown(report);
+    const dataLines = result.split('\n').slice(2);
+    expect(dataLines).toHaveLength(3); // age, name, email
+  });
+
+  it('includes field names and counts', () => {
+    const report = makeReport();
+    const result = formatValidationReportMarkdown(report);
+    expect(result).toContain('age');
+    expect(result).toContain('name');
+    expect(result).toContain('email');
+  });
+
+  it('returns a header-only table for an empty report', () => {
+    const report = new ValidationReport();
+    const result = formatValidationReportMarkdown(report);
+    expect(result).toContain('|');
+    expect(result).toContain('---');
+    const lines = result.split('\n');
+    expect(lines).toHaveLength(2); // header + separator only
+  });
+});
+
+describe('formatValidationReportCsv', () => {
+  it('first line is the header row', () => {
+    const report = makeReport();
+    const result = formatValidationReportCsv(report);
+    const firstLine = result.split('\n')[0];
+    expect(firstLine).toBe('row,field,severity,message,value');
+  });
+
+  it('has one data row per issue', () => {
+    const report = makeReport();
+    const lines = formatValidationReportCsv(report).split('\n');
+    expect(lines).toHaveLength(5); // header + 4 issues
+  });
+
+  it('returns empty string for an empty report', () => {
+    const report = new ValidationReport();
+    expect(formatValidationReportCsv(report)).toBe('');
+  });
+
+  it('escapes fields containing commas', () => {
+    const report = new ValidationReport();
+    report.addResult({
+      valid: false,
+      issues: [{ field: 'notes', message: 'must be, valid', severity: 'error', row: 0 }],
+    });
+    const result = formatValidationReportCsv(report);
+    expect(result).toContain('"must be, valid"');
+  });
+
+  it('handles issues without row or value', () => {
+    const report = new ValidationReport();
+    report.addResult({
+      valid: false,
+      issues: [{ field: 'x', message: 'missing', severity: 'error' }],
+    });
+    const lines = formatValidationReportCsv(report).split('\n');
+    expect(lines[1]).toMatch(/^,x,error,missing,$/);
+  });
+
+  it('neutralizes spreadsheet formula cells', () => {
+    const report = new ValidationReport();
+    report.addResult({
+      valid: false,
+      issues: [
+        {
+          field: '=cmd',
+          message: '@danger',
+          severity: 'error',
+          row: 0,
+          value: '+1',
+        },
+      ],
+    });
+    const lines = formatValidationReportCsv(report).split('\n');
+    expect(lines[1]).toBe("0,'=cmd,error,'@danger,'+1");
   });
 });
 

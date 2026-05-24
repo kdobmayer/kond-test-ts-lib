@@ -84,6 +84,10 @@ export class ValidationReport {
       .map(issue => ({ ...issue }));
   }
 
+  getIssues(): ValidationIssue[] {
+    return this._issues.map(issue => ({ ...issue }));
+  }
+
   clear(): void {
     this._issues = [];
     this._sourceStats.clear();
