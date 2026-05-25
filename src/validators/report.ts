@@ -64,4 +64,15 @@ export class ValidationReport {
   getAllIssues(): ValidationIssue[] {
     return this._allIssues.map(cloneIssue);
   }
+
+  clone(): ValidationReport {
+    const copy = new ValidationReport();
+    for (const r of this._results) {
+      copy.addResult(r);
+    }
+    for (const i of this._standaloneIssues) {
+      copy.addIssue(i);
+    }
+    return copy;
+  }
 }
