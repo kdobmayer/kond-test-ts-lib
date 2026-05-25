@@ -1,261 +1,210 @@
- src/validators/index.ts       |   2 +
- src/validators/report.test.ts | 177 ++++++++++++++++++++++++++++++++++++++++++
- src/validators/report.ts      |  54 +++++++++++++
- 3 files changed, 233 insertions(+)
+ src/formatters/index.test.ts | 108 ++++++++++++++++++++++++++++++++++++++++++-
+ src/formatters/index.ts      |  69 +++++++++++++++++++++++++++
+ 2 files changed, 176 insertions(+), 1 deletion(-)
 
-diff --git a/src/validators/index.ts b/src/validators/index.ts
-index 850c497..f930747 100644
---- a/src/validators/index.ts
-+++ b/src/validators/index.ts
-@@ -9,6 +9,8 @@ import {
-   ValidationResult,
- } from '../types';
+diff --git a/src/formatters/index.test.ts b/src/formatters/index.test.ts
+index 8437d8f..bf98d49 100644
+--- a/src/formatters/index.test.ts
++++ b/src/formatters/index.test.ts
+@@ -1,5 +1,16 @@
+-import { formatTable, toChartData, toCsv, toJson, toMarkdown, summarize } from './index';
++import {
++  formatTable,
++  toChartData,
++  toCsv,
++  toJson,
++  toMarkdown,
++  summarize,
++  formatValidationReportJson,
++  formatValidationReportMarkdown,
++  formatValidationReportCsv,
++} from './index';
+ import { DataSet } from '../types';
++import { ValidationReport } from '../validators';
  
-+export { ValidationReport } from './report';
+ const sampleData: DataSet = [
+   { name: 'Alice', age: 30, dept: 'eng' },
+@@ -119,3 +130,98 @@ describe('summarize', () => {
+     expect(summarize([])).toBe('Empty dataset');
+   });
+ });
 +
- // Intentional rough edge: duplicated type guard functions
- // These exist in both validateSchema and validateCustomRules
- 
-diff --git a/src/validators/report.test.ts b/src/validators/report.test.ts
-new file mode 100644
-index 0000000..dcb6d71
---- /dev/null
-+++ b/src/validators/report.test.ts
-@@ -0,0 +1,177 @@
-+import { ValidationReport } from './report';
-+import { ValidationIssue, ValidationResult } from '../types';
-+
-+describe('ValidationReport', () => {
-+  const errorIssue: ValidationIssue = { field: 'name', message: 'Required', severity: 'error', row: 0 };
-+  const warningIssue: ValidationIssue = { field: 'age', message: 'Too young', severity: 'warning', row: 1 };
-+  const infoIssue: ValidationIssue = { field: 'name', message: 'Suggestion', severity: 'info', row: 2 };
-+
-+  const validResult: ValidationResult = { valid: true, issues: [warningIssue] };
-+  const invalidResult: ValidationResult = { valid: false, issues: [errorIssue, infoIssue] };
-+
-+  describe('empty state', () => {
-+    it('returns all-zero summary with valid: true', () => {
-+      const report = new ValidationReport();
-+      expect(report.getSummary()).toEqual({
-+        totalResults: 0,
-+        totalIssues: 0,
-+        errorCount: 0,
-+        warningCount: 0,
-+        infoCount: 0,
-+        valid: true,
-+      });
-+    });
-+
-+    it('getFailures returns empty array', () => {
-+      expect(new ValidationReport().getFailures()).toEqual([]);
-+    });
-+
-+    it('getIssuesByField returns empty array', () => {
-+      expect(new ValidationReport().getIssuesByField('name')).toEqual([]);
-+    });
-+
-+    it('getIssuesBySeverity returns empty array', () => {
-+      expect(new ValidationReport().getIssuesBySeverity('error')).toEqual([]);
-+    });
++describe('formatValidationReportJson', () => {
++  it('returns valid JSON with summary and issues', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'name', message: 'Required', severity: 'error', row: 0 });
++    const json = formatValidationReportJson(report);
++    const parsed = JSON.parse(json);
++    expect(parsed.summary.errorCount).toBe(1);
++    expect(parsed.summary.valid).toBe(false);
++    expect(parsed.issues).toHaveLength(1);
++    expect(parsed.issues[0].field).toBe('name');
 +  });
 +
-+  describe('addResult', () => {
-+    it('accumulates results and their issues', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const summary = report.getSummary();
-+      expect(summary.totalResults).toBe(2);
-+      expect(summary.totalIssues).toBe(3);
-+      expect(summary.errorCount).toBe(1);
-+      expect(summary.warningCount).toBe(1);
-+      expect(summary.infoCount).toBe(1);
-+      expect(summary.valid).toBe(false);
-+    });
-+
-+    it('valid is true when only warnings/info present', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      expect(report.getSummary().valid).toBe(true);
-+    });
++  it('summary.errorCount matches report getSummary', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'a', message: 'err1', severity: 'error' });
++    report.addIssue({ field: 'b', message: 'err2', severity: 'error' });
++    report.addIssue({ field: 'c', message: 'warn', severity: 'warning' });
++    const parsed = JSON.parse(formatValidationReportJson(report));
++    expect(parsed.summary.errorCount).toBe(report.getSummary().errorCount);
++    expect(parsed.summary.warningCount).toBe(1);
 +  });
 +
-+  describe('addIssue', () => {
-+    it('appends a single issue directly', () => {
-+      const report = new ValidationReport();
-+      report.addIssue(errorIssue);
-+
-+      const summary = report.getSummary();
-+      expect(summary.totalResults).toBe(0);
-+      expect(summary.totalIssues).toBe(1);
-+      expect(summary.errorCount).toBe(1);
-+      expect(summary.valid).toBe(false);
-+    });
-+  });
-+
-+  describe('getIssuesByField', () => {
-+    it('returns only issues matching the given field', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const nameIssues = report.getIssuesByField('name');
-+      expect(nameIssues).toHaveLength(2);
-+      expect(nameIssues.every(i => i.field === 'name')).toBe(true);
-+
-+      const ageIssues = report.getIssuesByField('age');
-+      expect(ageIssues).toHaveLength(1);
-+      expect(ageIssues[0].field).toBe('age');
-+    });
-+
-+    it('returns empty array for unknown field', () => {
-+      const report = new ValidationReport();
-+      report.addResult(invalidResult);
-+      expect(report.getIssuesByField('unknown')).toEqual([]);
-+    });
-+  });
-+
-+  describe('getIssuesBySeverity', () => {
-+    it('returns only error issues', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const errors = report.getIssuesBySeverity('error');
-+      expect(errors).toHaveLength(1);
-+      expect(errors[0].severity).toBe('error');
-+    });
-+
-+    it('returns only warning issues', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const warnings = report.getIssuesBySeverity('warning');
-+      expect(warnings).toHaveLength(1);
-+      expect(warnings[0].severity).toBe('warning');
-+    });
-+
-+    it('returns only info issues', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const infos = report.getIssuesBySeverity('info');
-+      expect(infos).toHaveLength(1);
-+      expect(infos[0].severity).toBe('info');
-+    });
-+  });
-+
-+  describe('getFailures', () => {
-+    it('returns only results with at least one error', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      report.addResult(invalidResult);
-+
-+      const failures = report.getFailures();
-+      expect(failures).toHaveLength(1);
-+      expect(failures[0].valid).toBe(false);
-+      expect(failures[0].issues.some(i => i.severity === 'error')).toBe(true);
-+    });
-+
-+    it('returns empty array when no errors present', () => {
-+      const report = new ValidationReport();
-+      report.addResult(validResult);
-+      expect(report.getFailures()).toHaveLength(0);
-+    });
-+  });
-+
-+  describe('immutability', () => {
-+    it('mutation of getIssuesByField result does not affect internal state', () => {
-+      const report = new ValidationReport();
-+      report.addResult(invalidResult);
-+
-+      const result = report.getIssuesByField('name');
-+      result.push({ field: 'extra', message: 'injected', severity: 'error' });
-+
-+      expect(report.getSummary().totalIssues).toBe(2);
-+    });
-+
-+    it('mutation of getIssuesBySeverity result does not affect internal state', () => {
-+      const report = new ValidationReport();
-+      report.addResult(invalidResult);
-+
-+      const result = report.getIssuesBySeverity('error');
-+      result.push({ field: 'extra', message: 'injected', severity: 'error' });
-+
-+      expect(report.getSummary().errorCount).toBe(1);
-+    });
-+
-+    it('mutation of getFailures result does not affect internal state', () => {
-+      const report = new ValidationReport();
-+      report.addResult(invalidResult);
-+
-+      const failures = report.getFailures();
-+      failures.push({ valid: false, issues: [] });
-+
-+      expect(report.getSummary().totalResults).toBe(1);
-+    });
++  it('returns valid JSON for empty report', () => {
++    const report = new ValidationReport();
++    const parsed = JSON.parse(formatValidationReportJson(report));
++    expect(parsed.summary.errorCount).toBe(0);
++    expect(parsed.summary.valid).toBe(true);
++    expect(parsed.issues).toHaveLength(0);
 +  });
 +});
-diff --git a/src/validators/report.ts b/src/validators/report.ts
-new file mode 100644
-index 0000000..6d2904c
---- /dev/null
-+++ b/src/validators/report.ts
-@@ -0,0 +1,54 @@
-+import { ValidationIssue, ValidationResult, ValidationSeverity } from '../types';
 +
-+export class ValidationReport {
-+  private _results: ValidationResult[] = [];
-+  private _issues: ValidationIssue[] = [];
++describe('formatValidationReportMarkdown', () => {
++  it('contains per-severity counts in summary table', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'name', message: 'Required', severity: 'error', row: 0 });
++    report.addIssue({ field: 'age', message: 'Too low', severity: 'warning', row: 1 });
++    const md = formatValidationReportMarkdown(report);
++    expect(md).toContain('| error | 1 |');
++    expect(md).toContain('| warning | 1 |');
++    expect(md).toContain('| info | 0 |');
++  });
 +
-+  addResult(result: ValidationResult): void {
-+    this._results.push(result);
-+    for (const issue of result.issues) {
-+      this._issues.push(issue);
++  it('contains per-field issues table rows', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'name', message: 'Required', severity: 'error', row: 0 });
++    const md = formatValidationReportMarkdown(report);
++    expect(md).toContain('| Field | Severity | Message | Row |');
++    expect(md).toContain('| name | error | Required | 0 |');
++  });
++
++  it('escapes pipe characters in messages', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'x', message: 'a|b', severity: 'info' });
++    const md = formatValidationReportMarkdown(report);
++    expect(md).toContain('a\\|b');
++  });
++
++  it('includes headers and zero counts for empty report', () => {
++    const report = new ValidationReport();
++    const md = formatValidationReportMarkdown(report);
++    expect(md).toContain('| Severity | Count |');
++    expect(md).toContain('| Field | Severity | Message | Row |');
++    expect(md).toContain('| error | 0 |');
++  });
++});
++
++describe('formatValidationReportCsv', () => {
++  it('wraps messages containing commas in double quotes', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'name', message: 'value, is wrong', severity: 'error', row: 0 });
++    const csv = formatValidationReportCsv(report);
++    expect(csv).toContain('"value, is wrong"');
++  });
++
++  it('escapes double quotes in messages as double-double-quotes', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'name', message: 'say "hello"', severity: 'error', row: 0 });
++    const csv = formatValidationReportCsv(report);
++    expect(csv).toContain('"say ""hello"""');
++  });
++
++  it('returns header row only for empty report', () => {
++    const report = new ValidationReport();
++    expect(formatValidationReportCsv(report)).toBe('field,severity,message,row,value');
++  });
++
++  it('includes all issue columns', () => {
++    const report = new ValidationReport();
++    report.addIssue({ field: 'age', message: 'Too low', severity: 'warning', row: 2, value: 5 });
++    const lines = formatValidationReportCsv(report).split('\n');
++    expect(lines[0]).toBe('field,severity,message,row,value');
++    expect(lines[1]).toBe('age,warning,Too low,2,5');
++  });
++});
+diff --git a/src/formatters/index.ts b/src/formatters/index.ts
+index 4a787a8..7599459 100644
+--- a/src/formatters/index.ts
++++ b/src/formatters/index.ts
+@@ -1,4 +1,5 @@
+ import { ChartData, ChartDataPoint, DataRecord, DataSet, DataValue, TableOptions } from '../types';
++import { ValidationReport } from '../validators';
+ 
+ const DEFAULT_TABLE_OPTIONS: Required<TableOptions> = {
+   headers: true,
+@@ -179,6 +180,74 @@ export function toMarkdown(data: DataSet): string {
+   return lines.join('\n');
+ }
+ 
++/**
++ * Format a ValidationReport as a JSON string with summary and issues.
++ */
++export function formatValidationReportJson(report: ValidationReport): string {
++  return JSON.stringify({ summary: report.getSummary(), issues: report.getAllIssues() }, null, 2);
++}
++
++/**
++ * Format a ValidationReport as a markdown string with summary and issues tables.
++ */
++export function formatValidationReportMarkdown(report: ValidationReport): string {
++  const summary = report.getSummary();
++  const issues = report.getAllIssues();
++  const lines: string[] = [];
++
++  lines.push('## Summary');
++  lines.push('');
++  lines.push('| Severity | Count |');
++  lines.push('| --- | --- |');
++  lines.push(`| error | ${summary.errorCount} |`);
++  lines.push(`| warning | ${summary.warningCount} |`);
++  lines.push(`| info | ${summary.infoCount} |`);
++  lines.push('');
++  lines.push('## Issues');
++  lines.push('');
++  lines.push('| Field | Severity | Message | Row |');
++  lines.push('| --- | --- | --- | --- |');
++
++  if (issues.length === 0) {
++    lines.push('| (none) | | | |');
++  } else {
++    for (const issue of issues) {
++      const field = issue.field.replace(/\|/g, '\\|');
++      const severity = issue.severity.replace(/\|/g, '\\|');
++      const message = issue.message.replace(/\|/g, '\\|');
++      const row = issue.row !== undefined ? String(issue.row) : '';
++      lines.push(`| ${field} | ${severity} | ${message} | ${row} |`);
 +    }
 +  }
 +
-+  addIssue(issue: ValidationIssue): void {
-+    this._issues.push(issue);
-+  }
-+
-+  getSummary(): {
-+    totalResults: number;
-+    totalIssues: number;
-+    errorCount: number;
-+    warningCount: number;
-+    infoCount: number;
-+    valid: boolean;
-+  } {
-+    const errorCount = this._issues.filter(i => i.severity === 'error').length;
-+    return {
-+      totalResults: this._results.length,
-+      totalIssues: this._issues.length,
-+      errorCount,
-+      warningCount: this._issues.filter(i => i.severity === 'warning').length,
-+      infoCount: this._issues.filter(i => i.severity === 'info').length,
-+      valid: errorCount === 0,
-+    };
-+  }
-+
-+  getFailures(): ValidationResult[] {
-+    return this._results
-+      .filter(r => r.issues.some(i => i.severity === 'error'))
-+      .map(r => ({ valid: r.valid, issues: [...r.issues] }));
-+  }
-+
-+  getIssuesByField(field: string): ValidationIssue[] {
-+    return this._issues.filter(i => i.field === field).map(i => ({ ...i }));
-+  }
-+
-+  getIssuesBySeverity(severity: ValidationSeverity): ValidationIssue[] {
-+    return this._issues.filter(i => i.severity === severity).map(i => ({ ...i }));
-+  }
-+
-+  getAllIssues(): ValidationIssue[] {
-+    return this._issues.map(i => ({ ...i }));
-+  }
++  return lines.join('\n');
 +}
++
++/**
++ * Format a ValidationReport as a CSV string with columns: field,severity,message,row,value.
++ */
++export function formatValidationReportCsv(report: ValidationReport): string {
++  const delimiter = ',';
++  const header = 'field,severity,message,row,value';
++  const issues = report.getAllIssues();
++
++  if (issues.length === 0) return header;
++
++  const lines: string[] = [header];
++  for (const issue of issues) {
++    const row = [
++      escapeCsvField(issue.field, delimiter),
++      escapeCsvField(issue.severity, delimiter),
++      escapeCsvField(issue.message, delimiter),
++      escapeCsvField(issue.row !== undefined ? String(issue.row) : '', delimiter),
++      escapeCsvField(issue.value !== undefined && issue.value !== null ? String(issue.value) : '', delimiter),
++    ];
++    lines.push(row.join(delimiter));
++  }
++
++  return lines.join('\n');
++}
++
+ /**
+  * Format dataset as a summary with statistics.
+  */
