@@ -1,232 +1,90 @@
- src/pipeline/index.test.ts | 135 +++++++++++++++++++++++++++++++++++++++++++++
- src/pipeline/index.ts      |  30 +++++++++-
- 2 files changed, 162 insertions(+), 3 deletions(-)
+ src/validators/integration.test.ts | 81 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 81 insertions(+)
 
-diff --git a/src/pipeline/index.test.ts b/src/pipeline/index.test.ts
-index a5012dc..5f26b4e 100644
---- a/src/pipeline/index.test.ts
-+++ b/src/pipeline/index.test.ts
-@@ -56,4 +56,139 @@ describe('Pipeline', () => {
-     const result = createPipeline().from(data).filter(r => r.age === 30).execute();
-     expect(result.data).toHaveLength(1);
-   });
+diff --git a/src/validators/integration.test.ts b/src/validators/integration.test.ts
+new file mode 100644
+index 0000000..ba821d7
+--- /dev/null
++++ b/src/validators/integration.test.ts
+@@ -0,0 +1,81 @@
++import {
++  ValidationReport,
++  formatValidationReportJson,
++  formatValidationReportMarkdown,
++  formatValidationReportCsv,
++  createPipeline,
++} from '../index';
++import { DataSet, Schema } from '../types';
++import { CustomRule } from '../validators';
 +
-+  describe('ValidationReport integration', () => {
-+    it('accumulates issues from multiple validateWith steps', () => {
-+      const schema1: Schema = { name: { type: 'string', required: true } };
-+      const schema2: Schema = { age: { type: 'number', min: 0 } };
++const mixedData: DataSet = [
++  { name: 'Alice', age: 30, email: 'alice@example.com' },
++  { name: 'Bob', age: -5, email: 'bob@example.com' },
++  { name: null, age: 25, email: 'charlie@example.com' },
++  { name: 'Diana', age: 40, email: 'not-an-email' },
++];
 +
-+      const result = createPipeline(data)
-+        .validateWith(schema1)
-+        .validateWith(schema2)
-+        .execute();
++const schema: Schema = {
++  name: { type: 'string', required: true },
++  age: { type: 'number', min: 0 },
++  email: { type: 'email' },
++};
 +
-+      expect(result.validationResults).toHaveLength(2);
-+      expect(result.validationReport.getSummary().totalResults).toBe(2);
-+    });
++const rules: CustomRule[] = [
++  {
++    name: 'age-reasonable',
++    field: 'age',
++    severity: 'error',
++    message: 'Age must be <= 120',
++    validate: (v) => v === null || v === undefined || (v as number) <= 120,
++  },
++  {
++    name: 'name-not-short',
++    field: 'name',
++    severity: 'warning',
++    message: 'Name should be at least 2 characters',
++    validate: (v) => v === null || v === undefined || String(v).length >= 2,
++  },
++];
 +
-+    it('accumulates issues from validateWith and validateRules', () => {
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+      const result = createPipeline(data)
-+        .validateWith(schema)
-+        .validateRules([{
-+          name: 'age-check',
-+          field: 'age',
-+          message: 'Too young',
-+          validate: (v) => (v as number) >= 28,
-+        }])
-+        .execute();
++describe('end-to-end validation pipeline integration', () => {
++  let report: ValidationReport;
 +
-+      expect(result.validationResults).toHaveLength(2);
-+      expect(result.validationReport.getSummary().totalResults).toBe(2);
-+    });
-+
-+    it('includes issues from both steps in the report', () => {
-+      const badData: DataSet = [
-+        { name: null, age: -5 },
-+      ];
-+      const schema1: Schema = { name: { type: 'string', required: true } };
-+      const schema2: Schema = { age: { type: 'number', min: 0 } };
-+
-+      const result = createPipeline(badData)
-+        .validateWith(schema1)
-+        .validateWith(schema2)
-+        .execute();
-+
-+      const summary = result.validationReport.getSummary();
-+      expect(summary.totalResults).toBe(2);
-+      expect(summary.errorCount).toBeGreaterThan(0);
-+    });
-+
-+    it('getValidationReport() returns the same instance as result.validationReport', () => {
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+      const pipeline = createPipeline(data).validateWith(schema);
-+      const result = pipeline.execute();
-+
-+      expect(pipeline.getValidationReport()).toBe(result.validationReport);
-+    });
-+
-+    it('resets the report on each execute() call', () => {
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+      const pipeline = createPipeline(data).validateWith(schema);
-+
-+      pipeline.execute();
-+      const result = pipeline.execute();
-+
-+      expect(result.validationReport.getSummary().totalResults).toBe(1);
-+    });
-+
-+    it('result.validationResults preserves backward compatibility', () => {
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+      const result = createPipeline(data).validateWith(schema).execute();
-+
-+      expect(result.validationResults).toHaveLength(1);
-+      expect(result.validationResults[0]).toHaveProperty('valid');
-+      expect(result.validationResults[0]).toHaveProperty('issues');
-+    });
++  beforeAll(() => {
++    const result = createPipeline(mixedData)
++      .validateWith(schema)
++      .validateRules(rules)
++      .execute();
++    report = result.validationReport;
 +  });
 +
-+  describe('errorThreshold option', () => {
-+    it('aborts when error count exceeds threshold', () => {
-+      const badData: DataSet = [
-+        { name: null, age: 30 },
-+        { name: null, age: 25 },
-+      ];
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+
-+      const transformExecuted: boolean[] = [];
-+      const result = createPipeline(badData)
-+        .validateWith(schema)
-+        .transform((d) => { transformExecuted.push(true); return d; })
-+        .execute({ errorThreshold: 0 });
-+
-+      expect(result.errors).toHaveLength(1);
-+      expect(result.errors[0]).toMatch(/threshold exceeded/i);
-+      expect(transformExecuted).toHaveLength(0);
-+    });
-+
-+    it('completes normally when errors do not exceed threshold', () => {
-+      const badData: DataSet = [
-+        { name: null, age: 30 },
-+        { name: null, age: 25 },
-+        { name: null, age: 35 },
-+      ];
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+
-+      const result = createPipeline(badData)
-+        .validateWith(schema)
-+        .execute({ errorThreshold: 5 });
-+
-+      expect(result.errors).toHaveLength(0);
-+    });
-+
-+    it('records validation results up to the point of abort', () => {
-+      const badData: DataSet = [{ name: null }];
-+      const schema1: Schema = { name: { type: 'string', required: true } };
-+      const schema2: Schema = { age: { type: 'number', required: true } };
-+
-+      const result = createPipeline(badData)
-+        .validateWith(schema1)
-+        .validateWith(schema2)
-+        .execute({ errorThreshold: 0 });
-+
-+      expect(result.validationResults).toHaveLength(1);
-+      expect(result.validationReport.getSummary().totalResults).toBe(1);
-+    });
-+
-+    it('includes threshold message in errors array', () => {
-+      const badData: DataSet = [{ name: null }];
-+      const schema: Schema = { name: { type: 'string', required: true } };
-+
-+      const result = createPipeline(badData)
-+        .validateWith(schema)
-+        .execute({ errorThreshold: 0 });
-+
-+      expect(result.errors[0]).toContain('1 errors');
-+    });
++  it('accumulates results from both validation steps', () => {
++    const summary = report.getSummary();
++    expect(summary.totalResults).toBe(2);
++    expect(summary.errorCount).toBeGreaterThan(0);
 +  });
- });
-diff --git a/src/pipeline/index.ts b/src/pipeline/index.ts
-index 879db67..bc760fb 100644
---- a/src/pipeline/index.ts
-+++ b/src/pipeline/index.ts
-@@ -1,5 +1,5 @@
- import { DataRecord, DataSet, ValidationResult } from '../types';
--import { validateSchema, validateCustomRules, CustomRule } from '../validators';
-+import { validateSchema, validateCustomRules, CustomRule, ValidationReport } from '../validators';
- import { Schema } from '../types';
- 
- type PipelineStep =
-@@ -10,16 +10,22 @@ type PipelineStep =
- export interface PipelineResult {
-   data: DataSet;
-   validationResults: ValidationResult[];
-+  validationReport: ValidationReport;
-   stepsExecuted: number;
-   errors: string[];
- }
- 
-+export interface ExecuteOptions {
-+  errorThreshold?: number;
-+}
 +
- /**
-  * Fluent pipeline builder for chaining transformations and validations.
-  */
- export class Pipeline {
-   private steps: PipelineStep[] = [];
-   private source: DataSet = [];
-+  private _report: ValidationReport = new ValidationReport();
- 
-   constructor(data?: DataSet) {
-     if (data) this.source = data;
-@@ -71,14 +77,22 @@ export class Pipeline {
-     return this;
-   }
- 
-+  /**
-+   * Return the internal ValidationReport (reflects steps run so far).
-+   */
-+  getValidationReport(): ValidationReport {
-+    return this._report;
-+  }
++  it('formatValidationReportJson round-trips correctly', () => {
++    const json = formatValidationReportJson(report);
++    const parsed = JSON.parse(json);
++    expect(parsed.summary.errorCount).toBe(report.getSummary().errorCount);
++    expect(Array.isArray(parsed.issues)).toBe(true);
++  });
 +
-   /**
-    * Execute the pipeline and return results.
-    */
--  execute(): PipelineResult {
-+  execute(options?: ExecuteOptions): PipelineResult {
-     let data = [...this.source];
-     const validationResults: ValidationResult[] = [];
-     const errors: string[] = [];
-     let stepsExecuted = 0;
-+    this._report = new ValidationReport();
- 
-     for (const step of this.steps) {
-       try {
-@@ -92,6 +106,16 @@ export class Pipeline {
-           case 'validate': {
-             const result = step.fn(data);
-             validationResults.push(result);
-+            this._report.addResult(result);
++  it('formatValidationReportMarkdown contains table headers', () => {
++    const md = formatValidationReportMarkdown(report);
++    expect(md).toContain('| Severity | Count |');
++    expect(md).toContain('| Field | Severity | Message | Row |');
++    expect(md).toContain('| error |');
++  });
 +
-+            if (options?.errorThreshold !== undefined) {
-+              const { errorCount } = this._report.getSummary();
-+              if (errorCount > options.errorThreshold) {
-+                errors.push(`Validation error threshold exceeded: ${errorCount} errors`);
-+                stepsExecuted++;
-+                return { data, validationResults, validationReport: this._report, stepsExecuted, errors };
-+              }
-+            }
-             break;
-           }
-         }
-@@ -102,7 +126,7 @@ export class Pipeline {
-       }
-     }
- 
--    return { data, validationResults, stepsExecuted, errors };
-+    return { data, validationResults, validationReport: this._report, stepsExecuted, errors };
-   }
- 
-   /**
++  it('formatValidationReportCsv contains column header row', () => {
++    const csv = formatValidationReportCsv(report);
++    expect(csv).toContain('field,severity,message,row,value');
++  });
++
++  it('ValidationReport is importable from the package root', () => {
++    const r = new ValidationReport();
++    expect(r.getSummary().valid).toBe(true);
++  });
++});
