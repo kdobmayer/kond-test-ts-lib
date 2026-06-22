@@ -1,4 +1,5 @@
 import { ChartData, ChartDataPoint, DataRecord, DataSet, DataValue, TableOptions } from '../types';
+import { ValidationReport } from '../validators';
 
 const DEFAULT_TABLE_OPTIONS: Required<TableOptions> = {
   headers: true,
@@ -139,6 +140,18 @@ function escapeCsvField(value: string, delimiter: string): string {
   return value;
 }
 
+// Prefix formula-triggering characters so spreadsheet apps don't evaluate them as formulas.
+function sanitizeCsvCell(value: string): string {
+  if (/^[=+\-@]/.test(value)) {
+    return `\t${value}`;
+  }
+  return value;
+}
+
+function sanitizeMarkdownCell(value: string): string {
+  return value.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+}
+
 /**
  * Export dataset as JSON string with formatting options.
  */
@@ -174,6 +187,75 @@ export function toMarkdown(data: DataSet): string {
   for (const record of data) {
     const row = columns.map(col => formatValue(record[col]).replace(/\|/g, '\\|'));
     lines.push('| ' + row.join(' | ') + ' |');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format a ValidationReport as a JSON string with summary and issues.
+ */
+export function formatValidationReportJson(report: ValidationReport): string {
+  return JSON.stringify({ summary: report.getSummary(), issues: report.getAllIssues() }, null, 2);
+}
+
+/**
+ * Format a ValidationReport as a markdown string with summary and issues tables.
+ */
+export function formatValidationReportMarkdown(report: ValidationReport): string {
+  const summary = report.getSummary();
+  const issues = report.getAllIssues();
+  const lines: string[] = [];
+
+  lines.push('## Summary');
+  lines.push('');
+  lines.push('| Severity | Count |');
+  lines.push('| --- | --- |');
+  lines.push(`| error | ${summary.errorCount} |`);
+  lines.push(`| warning | ${summary.warningCount} |`);
+  lines.push(`| info | ${summary.infoCount} |`);
+  lines.push('');
+  lines.push('## Issues');
+  lines.push('');
+  lines.push('| Field | Severity | Message | Row |');
+  lines.push('| --- | --- | --- | --- |');
+
+  if (issues.length === 0) {
+    lines.push('| (none) | | | |');
+  } else {
+    for (const issue of issues) {
+      const field = sanitizeMarkdownCell(issue.field);
+      const severity = sanitizeMarkdownCell(issue.severity);
+      const message = sanitizeMarkdownCell(issue.message);
+      const row = issue.row !== undefined ? String(issue.row) : '';
+      lines.push(`| ${field} | ${severity} | ${message} | ${row} |`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format a ValidationReport as a CSV string with columns: field,severity,message,row,value.
+ */
+export function formatValidationReportCsv(report: ValidationReport): string {
+  const delimiter = ',';
+  const header = 'field,severity,message,row,value';
+  const issues = report.getAllIssues();
+
+  if (issues.length === 0) return header;
+
+  const lines: string[] = [header];
+  for (const issue of issues) {
+    const valueStr = issue.value !== undefined && issue.value !== null ? String(issue.value) : '';
+    const row = [
+      escapeCsvField(sanitizeCsvCell(issue.field), delimiter),
+      escapeCsvField(issue.severity, delimiter),
+      escapeCsvField(sanitizeCsvCell(issue.message), delimiter),
+      escapeCsvField(issue.row !== undefined ? String(issue.row) : '', delimiter),
+      escapeCsvField(sanitizeCsvCell(valueStr), delimiter),
+    ];
+    lines.push(row.join(delimiter));
   }
 
   return lines.join('\n');

@@ -9,6 +9,8 @@ import {
   ValidationResult,
 } from '../types';
 
+export { ValidationReport } from './report';
+
 // Intentional rough edge: duplicated type guard functions
 // These exist in both validateSchema and validateCustomRules
 

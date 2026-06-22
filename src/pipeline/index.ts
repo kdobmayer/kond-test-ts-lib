@@ -1,5 +1,5 @@
 import { DataRecord, DataSet, ValidationResult } from '../types';
-import { validateSchema, validateCustomRules, CustomRule } from '../validators';
+import { validateSchema, validateCustomRules, CustomRule, ValidationReport } from '../validators';
 import { Schema } from '../types';
 
 type PipelineStep =
@@ -10,8 +10,13 @@ type PipelineStep =
 export interface PipelineResult {
   data: DataSet;
   validationResults: ValidationResult[];
+  validationReport: ValidationReport;
   stepsExecuted: number;
   errors: string[];
+}
+
+export interface ExecuteOptions {
+  errorThreshold?: number;
 }
 
 /**
@@ -20,6 +25,7 @@ export interface PipelineResult {
 export class Pipeline {
   private steps: PipelineStep[] = [];
   private source: DataSet = [];
+  private _report: ValidationReport = new ValidationReport();
 
   constructor(data?: DataSet) {
     if (data) this.source = data;
@@ -72,13 +78,21 @@ export class Pipeline {
   }
 
   /**
+   * Return a snapshot of the ValidationReport at this point in time.
+   */
+  getValidationReport(): ValidationReport {
+    return this._report.clone();
+  }
+
+  /**
    * Execute the pipeline and return results.
    */
-  execute(): PipelineResult {
+  execute(options?: ExecuteOptions): PipelineResult {
     let data = [...this.source];
     const validationResults: ValidationResult[] = [];
     const errors: string[] = [];
     let stepsExecuted = 0;
+    this._report = new ValidationReport();
 
     for (const step of this.steps) {
       try {
@@ -92,6 +106,16 @@ export class Pipeline {
           case 'validate': {
             const result = step.fn(data);
             validationResults.push(result);
+            this._report.addResult(result);
+
+            if (options?.errorThreshold !== undefined) {
+              const { errorCount } = this._report.getSummary();
+              if (errorCount > options.errorThreshold) {
+                errors.push(`Validation error threshold exceeded: ${errorCount} errors`);
+                stepsExecuted++;
+                return { data, validationResults, validationReport: this._report.clone(), stepsExecuted, errors };
+              }
+            }
             break;
           }
         }
@@ -102,7 +126,7 @@ export class Pipeline {
       }
     }
 
-    return { data, validationResults, stepsExecuted, errors };
+    return { data, validationResults, validationReport: this._report.clone(), stepsExecuted, errors };
   }
 
   /**
@@ -111,6 +135,7 @@ export class Pipeline {
   reset(): Pipeline {
     this.steps = [];
     this.source = [];
+    this._report = new ValidationReport();
     return this;
   }
 }
