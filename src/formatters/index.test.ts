@@ -1,4 +1,4 @@
-import { formatTable, toChartData, toCsv, toJson, toMarkdown, summarize } from './index';
+import { formatDate, formatTable, toChartData, toCsv, toJson, toMarkdown, summarize } from './index';
 import { DataSet } from '../types';
 
 const sampleData: DataSet = [
@@ -105,6 +105,47 @@ describe('toMarkdown', () => {
 
   it('returns empty for empty data', () => {
     expect(toMarkdown([])).toBe('');
+  });
+});
+
+describe('formatDate', () => {
+  const dateObj = new Date('2024-03-15T10:05:03Z');
+
+  it('formats a Date object with YYYY-MM-DD', () => {
+    expect(formatDate(dateObj, 'YYYY-MM-DD')).toBe('2024-03-15');
+  });
+
+  it('formats a Date object with HH:mm:ss', () => {
+    expect(formatDate(dateObj, 'HH:mm:ss')).toBe('10:05:03');
+  });
+
+  it('accepts a date string input', () => {
+    expect(formatDate('2024-03-15T10:05:03', 'YYYY-MM-DD')).toBe('2024-03-15');
+  });
+
+  it('accepts a numeric epoch input', () => {
+    const epoch = Date.UTC(2024, 2, 15, 10, 5, 3);
+    expect(formatDate(epoch, 'YYYY-MM-DD')).toBe('2024-03-15');
+  });
+
+  it('uses default format when none is provided', () => {
+    expect(formatDate(dateObj)).toBe('2024-03-15 10:05:03');
+  });
+
+  it('replaces repeated tokens throughout the format string', () => {
+    expect(formatDate(dateObj, 'YYYY/MM/DD YYYY HH:mm:ss')).toBe('2024/03/15 2024 10:05:03');
+  });
+
+  it('returns empty string for invalid string input', () => {
+    expect(formatDate('not-a-date')).toBe('');
+  });
+
+  it('returns empty string for null input', () => {
+    expect(formatDate(null as any)).toBe('');
+  });
+
+  it('returns empty string for undefined input', () => {
+    expect(formatDate(undefined as any)).toBe('');
   });
 });
 
